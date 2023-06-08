@@ -285,7 +285,7 @@ where
         .expect("Scoped threading failed.")
     }
 
-    pub fn propagate_step_threaded(&mut self, thread_count: u32) -> BPResult<()> {
+    /* pub fn propagate_step_threaded(&mut self, thread_count: u32) -> BPResult<()> {
         if self.check_validity && !self.is_valid() {
             return Err(BPError::new(
                 "propagate_step_threaded".to_owned(),
@@ -300,7 +300,7 @@ where
         info_print!("Done propagating step {}\n", self.step);
         self.step += 1;
         Ok(())
-    }
+    } */
 
     pub fn propagate_threaded(&mut self, steps: usize, thread_count: u32) -> BPResult<()> {
         if !self.is_initialized() {
@@ -310,7 +310,7 @@ where
             ));
         }
         for _ in 0..steps {
-            self.propagate_step_threaded(thread_count)?;
+            // self.propagate_step_threaded(thread_count)?;
         }
         Ok(())
     }
