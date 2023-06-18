@@ -496,7 +496,6 @@ where
                     .attach_debug_object("msg (the invalid message)", &msg)
                     .attach_debug_object("step", step));
                 }
-                println!("{:?}",msg);
                 nto.send_post(from, msg);
             }
         }
