@@ -555,7 +555,7 @@ where
         Ok(())
     }
 
-    fn get_node(&self, node: NodeIndex) -> BPResult<&Node<T, MsgT, CtrlMsgT, CtrlMsgAT>> {
+    pub fn get_node(&self, node: NodeIndex) -> BPResult<&Node<T, MsgT, CtrlMsgT, CtrlMsgAT>> {
         let len = self.len();
         self.nodes.get(node).ok_or(BPError::new(
             "BPGraph::get_node".to_owned(),
