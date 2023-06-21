@@ -562,7 +562,7 @@ where
             format!("Index {} out of bounds ({})", node, len),
         ))
     }
-    fn get_node_mut(
+    pub fn get_node_mut(
         &mut self,
         node: NodeIndex,
     ) -> BPResult<&mut Node<T, MsgT, CtrlMsgT, CtrlMsgAT>> {
