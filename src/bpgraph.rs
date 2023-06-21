@@ -8,7 +8,7 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::{BPError, BPResult, Msg, Node, NodeFunction, Probability};
+use crate::{BPError, BPResult, Msg, Node, NodeFunction, Probability, variable_node};
 
 pub type NodeIndex = usize;
 
@@ -16,10 +16,10 @@ pub struct BPGraph<T, MsgT: Msg<T>, CtrlMsgT = (), CtrlMsgAT: Default = ()>
 where
     T: Debug,
 {
-    nodes: Vec<Node<T, MsgT, CtrlMsgT, CtrlMsgAT>>,
-    step: usize,
-    normalize: bool,
-    check_validity: bool,
+    pub nodes: Vec<Node<T, MsgT, CtrlMsgT, CtrlMsgAT>>,
+    pub step: usize,
+    pub normalize: bool,
+    pub check_validity: bool,
 }
 
 impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> BPGraph<T, MsgT, CtrlMsgT, CtrlMsgAT>
@@ -49,14 +49,25 @@ where
     pub fn get_result(
         &self,
         node_index: NodeIndex,
+        curr: bool,
     ) -> BPResult<Option<std::collections::HashMap<T, Probability>>> {
         let n = self.get_node(node_index)?;
+        if curr {
         n.get_result().map_err(|e| {
             e.attach_info_str(
                 "BPGraph::get_result",
                 format!("Failed to retrieve result from node {}", node_index),
             )
         })
+        }
+        else {
+            n.get_result_prev().map_err(|e| {
+                e.attach_info_str(
+                    "BPGraph::get_result",
+                    format!("Failed to retrieve previous result from node {}", node_index),
+                )
+            })
+        }
     }
 }
 

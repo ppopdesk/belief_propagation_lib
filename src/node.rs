@@ -7,11 +7,12 @@ pub struct Node<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default>
 where
     T: Debug,
 {
-    name: String,
-    connections: Vec<NodeIndex>,
-    inbox: Vec<(NodeIndex, MsgT)>,
-    node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
-    is_initialized: bool,
+    pub name: String,
+    pub connections: Vec<NodeIndex>,
+    pub inbox: Vec<(NodeIndex, MsgT)>,
+    pub node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
+    pub is_initialized: bool,
+    pub inbox_prev: Vec<(NodeIndex, MsgT)>,
 }
 
 impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> Node<T, MsgT, CtrlMsgT, CtrlMsgAT>
@@ -27,12 +28,14 @@ where
         if let Some(num_input) = num_input {
             inbox.reserve(num_input);
         }
-        Node {
+        let mut inbox_prev = Vec::new();
+        Node { 
             name,
             is_initialized: false,
             connections: Vec::new(),
             inbox,
             node_function,
+            inbox_prev,
         }
     }
     pub fn send_control_message(&mut self, ctrl_msg: CtrlMsgT) -> BPResult<CtrlMsgAT> {
@@ -133,6 +136,7 @@ where
         //TODO: Check in debug mode if all messages arrived?
         self.node_function.node_function(incoming_msgs)
     }
+
 }
 
 impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> Node<T, MsgT, CtrlMsgT, CtrlMsgAT>
@@ -140,6 +144,14 @@ where
     T: Clone + Debug,
     MsgT: Clone,
 {
+    pub fn change_inbox(&mut self) {
+        self.inbox = self.inbox_prev.clone();
+    }
+
+    pub fn change_inbox_prev(&mut self) {
+        self.inbox_prev = self.inbox.clone();
+    }
+
     pub fn clone_inbox(&self) -> Vec<(NodeIndex, MsgT)> {
         self.inbox.clone()
     }
@@ -175,6 +187,36 @@ where
                 (msg_to_hashmap(self.inbox[0].1.clone()), 1)
             };
             for inb in &self.inbox[start..] {
+                mult_hashmaps(&mut res, msg_to_hashmap(inb.1.clone())).map_err(|e| {
+                    e.attach_info_str(
+                        "node::get_result",
+                        format!(
+                            "Failed multiplying hashmaps to compute result for node {}.",
+                            self.name
+                        ),
+                    )
+                    .attach_debug_object("inb (element of inbox)", inb)
+                    .attach_debug_object("res (Accumulating variable for multiplication, starting with prior or first message)", &res)
+                })?;
+            }
+            //res = self.inbox.iter().fold_result(res, |a, b| mult_hashmaps(a, msg_to_hashmap(b.1.clone()))?);
+            Ok(Some(res))
+        }
+    }
+    pub fn get_result_prev(& self) -> BPResult<Option<std::collections::HashMap<T, Probability>>> {
+        let prior = self.node_function.get_prior();
+        if self.inbox_prev.is_empty() || self.is_factor() {
+            return Ok(None);
+        }
+        else {
+            let (mut res, start) = if let Some(prior) = self.node_function.get_prior() {
+                let mut prior = msg_to_hashmap(prior);
+                norm_hashmap(&mut prior);
+                (prior, 0)
+            } else {
+                (msg_to_hashmap(self.inbox_prev[0].1.clone()), 1)
+            };
+            for inb in &self.inbox_prev[start..] {
                 mult_hashmaps(&mut res, msg_to_hashmap(inb.1.clone())).map_err(|e| {
                     e.attach_info_str(
                         "node::get_result",

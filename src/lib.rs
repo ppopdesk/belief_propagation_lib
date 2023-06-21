@@ -72,7 +72,7 @@ mod tests {
 
         g.propagate_threaded(2, 1)?;
         g.propagate(10)?;
-        let mut res = g.get_result(2)?.unwrap();
+        let mut res = g.get_result(2,true)?.unwrap();
         let mut sum: f64 = res.iter().map(|(_, p)| p).sum();
         let res_normed: HashMap<i32, Probability> =
             res.iter().map(|(v, p)| (*v, p / sum)).collect();
