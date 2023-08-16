@@ -1,3 +1,4 @@
+//ABP_CHECK
 use crate::{BPError, BPResult, Msg, NodeFunction, NodeIndex, Probability};
 use std::collections::HashMap;
 use std::default::Default;
