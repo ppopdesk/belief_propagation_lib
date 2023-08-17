@@ -8,10 +8,11 @@ pub struct Node<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default>
 where
     T: Debug,
 {
-    name: String,
+    pub name: String,
     connections: Vec<NodeIndex>,
-    inbox: Vec<(NodeIndex, MsgT)>,
-    node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
+    pub inbox: Vec<(NodeIndex, MsgT)>,
+    pub node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
+    pub is_variable : bool,
     is_initialized: bool,
 }
 
@@ -22,6 +23,7 @@ where
     pub fn new(
         name: String,
         node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
+        is_variable: bool,
     ) -> Self {
         let mut inbox = Vec::new();
         let num_input = node_function.number_inputs();
@@ -34,6 +36,7 @@ where
             connections: Vec::new(),
             inbox,
             node_function,
+            is_variable,
         }
     }
     pub fn send_control_message(&mut self, ctrl_msg: CtrlMsgT) -> BPResult<CtrlMsgAT> {
@@ -109,12 +112,36 @@ where
     pub fn has_post(&self) -> bool {
         !self.inbox.is_empty()
     }
+     
+    pub fn get_prior(&self) -> MsgT {
+        let Some(prior) = self.node_function.get_prior();
+        return prior;
+    }
+
+    pub fn get_log_prob(&self) -> MsgT {
+        //below should only be for variable nodes
+        let Some(log_prob) = self.node_function.get_log_prob();
+        return log_prob;
+    }
+
+    pub fn get_zero_pdf(&self) -> MsgT {
+        let Some(zero_pdf) = self.node_function.get_zero_pdf();
+        return zero_pdf;
+    }
+
+    pub fn update_push(&mut self, node_index: usize, msg: MsgT) {
+        self.inbox[node_index] = (node_index,msg);
+    }
+
+    pub fn update_log_prob(&mut self, q: &MsgT, r: &MsgT) {
+        self.node_function.update_log_prob(q,r);
+    }
 
     pub fn read_post(&mut self) -> Vec<(NodeIndex, MsgT)> {
         std::mem::replace(&mut self.inbox, Vec::with_capacity(self.connections.len()))
     }
 
-    pub fn send_post(&mut self, from: NodeIndex, msg: MsgT) {
+    pub fn send_post(&mut self, from: NodeIndex, mut msg: MsgT) {
         self.inbox.push((from, msg));
     }
 
@@ -133,6 +160,10 @@ where
         );
         //TODO: Check in debug mode if all messages arrived?
         self.node_function.node_function(incoming_msgs)
+    }
+    pub fn get_matrix_value(&self, node_index : &usize) -> &MsgT {
+      let Some((to,msg)) = self.inbox.get(*node_index);
+      return msg;
     }
 }
 
