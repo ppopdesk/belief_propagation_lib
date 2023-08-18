@@ -19,6 +19,7 @@ where
     step: usize,
     normalize: bool,
     check_validity: bool,
+    num_var_nodes: usize,
 }
 
 impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> BPGraph<T, MsgT, CtrlMsgT, CtrlMsgAT>
@@ -345,6 +346,7 @@ where
             step: 0,
             normalize: true,
             check_validity: false,
+            num_var_nodes: 0,
         }
     }
 
@@ -439,34 +441,34 @@ where
     }
 
     //Error messages for this
-    pub fn create_messages_var(&mut self, check_node_index : usize) {
+    pub fn create_messages_var(&mut self, check_node_index : usize) -> BPResult<()> {
         let check_node: &Node<T, MsgT, CtrlMsgT, CtrlMsgAT> = self.get_node(check_node_index)?;
         let check_node_connections = check_node.get_connections();
-        //Unecessary computation:
-        let variable_nodes_num = BPGraph::variable_nodes_count(&self);
+        let variable_nodes_num = self.num_var_nodes;
         for var_node_index in check_node_connections {
             let r = Node::get_matrix_value(check_node, var_node_index);
             let var_node: &mut Node<T, MsgT, CtrlMsgT, CtrlMsgAT> = self.get_node_mut(*var_node_index)?;
             let log_prob_curr: MsgT = Node::get_log_prob(var_node);
             if r.is_valid() {
-                let mut r_log: mut MsgT = r.get_log();
-                let mut q = (log_prob_curr.subtract(r_log)).exponent();
+                let mut r_log: MsgT = var_node.get_log(r);
+                let mut q_log = var_node.subtract(log_prob_curr,r_log);
+                let mut q = var_node.exponent(q_log);
                 //The below function doesn't work have to change
-                var_node.update_push(check_node_index-variable_nodes_num, (&q).normalize()?);
+                var_node.update_push(check_node_index-variable_nodes_num, q);
             }   
             else {
-                let mut q = log_prob_curr.exponent();
-                var_node.update_push(check_node_index-variable_nodes_num, (&q).normalize()?);
+                let mut q = var_node.exponent(log_prob_curr);
+                var_node.update_push(check_node_index-variable_nodes_num, q);
             }
         }
+        return Ok(())
     }
 
     //Error messages for this
-    pub fn create_messages_check(&mut self, check_node_index : usize) {
+    pub fn create_messages_check(&mut self, check_node_index : usize) -> BPResult<()> {
         let check_node = self.get_node_mut(check_node_index)?;
         let check_node_connections = check_node.get_connections();
-        //Unecessary computation:
-        let variable_nodes_num = BPGraph::variable_nodes_count(&self);
+        let variable_nodes_num = self.num_var_nodes;
         let mut var_messages: Vec<(usize,MsgT)> = Vec::with_capacity(check_node_connections.len());
         for var_node_index in check_node_connections {
             let var_node = self.get_node(*var_node_index)?;
@@ -475,25 +477,25 @@ where
         //Order satisfied in this??
         let check_messages = check_node.node_function.node_function(var_messages)?;
         check_node.inbox = check_messages;
+        Ok(())
     }
 
-    pub fn update_log_prob(&mut self, check_node_index : usize) {
+    pub fn update_log_prob(&mut self, check_node_index : usize) -> BPResult<()>{
         let check_node = self.get_node_mut(check_node_index)?;
         let check_node_connections = check_node.get_connections();
-        //Unecessary computation:
-        let variable_nodes_num = BPGraph::variable_nodes_count(&self);
+        let variable_nodes_num = self.num_var_nodes;
         for var_node_index in check_node_connections {
             let mut var_node = self.get_node_mut(*var_node_index)?;
             let r = check_node.get_matrix_value(var_node_index);
             let q = var_node.get_matrix_value(&(check_node_index-&variable_nodes_num));
             var_node.update_log_prob(q,r);
         }
+        Ok(())
     }
 
     //Error messages for this
     pub fn initialise_matrix(&self) -> () {
-        //Unecessary computation:
-        let variable_nodes_num = BPGraph::variable_nodes_count(&self);
+        let variable_nodes_num = self.num_var_nodes;
         for (i,node) in self.nodes.iter_mut().enumerate() {
             let node_connections = node.get_connections();
             if node.is_variable {
@@ -603,6 +605,9 @@ where
             node_function,
             is_var,
         ));
+        if is_var {
+            self.num_var_nodes+=1;
+        }
         self.nodes.len() - 1
     }
 

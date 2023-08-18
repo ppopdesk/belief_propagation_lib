@@ -133,6 +133,18 @@ where
         self.inbox[node_index] = (node_index,msg);
     }
 
+    pub fn get_log(&mut self, r: &MsgT) -> MsgT {
+        self.node_function.get_log(r)
+    }
+
+    pub fn subtract(&mut self, p_1: MsgT, p_2: MsgT) -> MsgT {
+        self.node_function.subtract(p_1,p_2)
+    }
+
+    pub fn exponent(&mut self, p : MsgT) -> MsgT {
+        self.node_function.exponent(p)
+    }
+
     pub fn update_log_prob(&mut self, q: &MsgT, r: &MsgT) {
         self.node_function.update_log_prob(q,r);
     }
@@ -182,6 +194,7 @@ where
     T: Copy + Eq + std::hash::Hash + Debug,
     MsgT: Clone,
 {
+
     pub fn get_result(&self) -> BPResult<Option<std::collections::HashMap<T, Probability>>> {
         let prior = self.node_function.get_prior();
         if self.inbox.is_empty() {
