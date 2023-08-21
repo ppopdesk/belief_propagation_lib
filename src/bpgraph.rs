@@ -141,19 +141,19 @@ where
             }
         })
     }
-
+*/
     pub fn propagate(&mut self, steps: usize) -> BPResult<()> {
-        if !self.is_initialized() {
+        /* if !self.is_initialized() {
             return Err(BPError::new(
                 "BPGraph::propagate".to_owned(),
                 "Graph is not initialized".to_owned(),
             ));
-        }
+        } */
         for _ in 0..steps {
             self.propagate_step()?;
         }
         Ok(())
-    } */
+    }
 
     pub fn propagate_step(&mut self) -> BPResult<()> {
         /* if self.check_validity && !self.is_valid() {
