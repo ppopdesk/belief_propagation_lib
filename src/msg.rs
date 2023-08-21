@@ -16,6 +16,10 @@ where
     fn insert(&mut self, value: T, p: Probability);
     fn normalize(&mut self) -> BPResult<()>;
     fn is_valid(&self) -> bool;
+    fn get_log(&self) -> Self ;
+    fn add(&self, second: &Self) -> Self;
+    fn subtract(self, second: Self) -> Self;
+    fn exponent(self) -> Self;
     fn mult_msg(&mut self, other: &Self);
     fn mult_msg_weighted(&mut self, other: &Self, alpha: f64) {
         todo!("Not implemented.");
@@ -56,7 +60,7 @@ where
     crate::node::norm_hashmap(op0);
 }
 
-impl<T> Msg<T> for HashMap<T, Probability>
+/* impl<T> Msg<T> for HashMap<T, Probability>
 where
     T: std::hash::Hash + Eq + Debug+ Clone,
 {
@@ -92,6 +96,6 @@ where
     fn mult_msg(&mut self, other: &Self) {
         mult_hashmaps(self, other);
     }
-}
+} */
 
 //TODO: indexmap
