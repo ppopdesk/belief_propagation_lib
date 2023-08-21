@@ -15,11 +15,13 @@ pub struct BPGraph<T, MsgT: Msg<T>, CtrlMsgT = (), CtrlMsgAT: Default = ()>
 where
     T: Debug,
 {
-    nodes: Vec<Node<T, MsgT, CtrlMsgT, CtrlMsgAT>>,
+    check_nodes: Vec<Node<T, MsgT, CtrlMsgT, CtrlMsgAT>>,
+    var_nodes: Vec<Node<T, MsgT, CtrlMsgT, CtrlMsgAT>>,
     step: usize,
     normalize: bool,
     check_validity: bool,
     num_var_nodes: usize,
+    num_check_nodes: usize,
 }
 
 impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> BPGraph<T, MsgT, CtrlMsgT, CtrlMsgAT>
@@ -27,7 +29,7 @@ where
     T: Debug,
     MsgT: Clone,
 {
-    pub fn initialize_node_constant_msg(
+    /* pub fn initialize_node_constant_msg(
         &mut self,
         node_index: NodeIndex,
         msg: MsgT,
@@ -38,7 +40,7 @@ where
         }
         n.initialize()?;
         Ok(())
-    }
+    } */
 }
 
 impl<T, MsgT: Msg<T> + Clone, CtrlMsgT, CtrlMsgAT: Default> BPGraph<T, MsgT, CtrlMsgT, CtrlMsgAT>
@@ -46,7 +48,7 @@ where
     T: Copy + Eq + Debug + std::hash::Hash,
     MsgT: Clone,
 {
-    pub fn get_result(
+    /* pub fn get_result(
         &self,
         node_index: NodeIndex,
     ) -> BPResult<Option<std::collections::HashMap<T, Probability>>> {
@@ -57,272 +59,7 @@ where
                 format!("Failed to retrieve result from node {}", node_index),
             )
         })
-    }
-}
-
-impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> BPGraph<T, MsgT, CtrlMsgT, CtrlMsgAT>
-where
-    T: Send + Sync + Debug,
-    MsgT: Send + Sync,
-{
-    //msgs: [(from, [(to, msg)])]
-    fn send_threaded(
-        &mut self,
-        msgs: Vec<(NodeIndex, Vec<(NodeIndex, MsgT)>)>,
-        thread_count: u32,
-    ) -> BPResult<()> {
-        let normalize = self.normalize;
-        let check_validity = self.check_validity;
-        let step = self.step;
-        let mut nodes: Vec<Arc<Mutex<&mut Node<T, MsgT, CtrlMsgT, CtrlMsgAT>>>> = self
-            .nodes
-            .iter_mut()
-            .map(|n| Arc::new(Mutex::new(n)))
-            .collect();
-        let ln_msgs = msgs.len();
-        let mut msgs = Arc::new(Mutex::new(msgs));
-        let min_batch_size = 5;
-        #[cfg(feature = "progress_output")]
-        let (whitespace_padding, step) = {
-            let max_diff_in_number = f64::log10(ln_msgs as f64) as usize + 1;
-            (
-                &(std::iter::repeat(" ")
-                    .take(max_diff_in_number)
-                    .collect::<String>()),
-                self.step.clone(),
-            )
-        };
-        crossbeam::scope(|scope| {
-            let mut handles = Vec::with_capacity(thread_count as usize);
-            for i in 0..thread_count {
-                handles.push(scope.spawn(|_| {
-                    loop {
-                        let chunck: Vec<(NodeIndex, Vec<(NodeIndex, MsgT)>)> = {
-                            thread_print!("Thread {} waiting for lock..", i);
-                            let mut msgs = msgs.lock().expect("Locking mutex failed.");
-                            thread_print!("Thread {} has lock..", i);
-                            let len = msgs.len();
-                            if len == 0 {
-                                break;
-                            }
-
-                            #[cfg(feature = "progress_output")]
-                            {
-                                print!(
-                                    "Step {}: {} nodes left{}\r",
-                                    step,
-                                    nodes.len(),
-                                    &whitespace_padding
-                                );
-                                std::io::stdout().flush();
-                            }
-                            let mut batch_size = std::cmp::max(
-                                min_batch_size,
-                                msgs.len() / (2 * thread_count) as usize,
-                            ); //TODO
-                            let chunck = msgs
-                                .drain(0..std::cmp::min(batch_size as usize, len))
-                                .collect();
-                            chunck
-                        };
-
-                        for (from, mut msgmap) in chunck.into_iter() {
-                            for (to, mut msg) in msgmap.into_iter() {
-                                debug_print!("Sending from {} to {}", from, to);
-                                {
-                                    if check_validity && !msg.is_valid() {
-                                        return Err(BPError::new(
-                                            "BPGraph::send".to_owned(),
-                                            format!("Trying to send an invalid message ({} -> {})", from, to),
-                                        )
-                                        .attach_debug_object("msg (the invalid message)", &msg)
-                                        .attach_debug_object("step", step));
-                                    }
-                                    if normalize {
-                                        msg.normalize().map_err(|e| {
-                                            e.attach_info_str(
-                                                "BPGraph::send",
-                                                format!("Trying to normalize message {} -> {}.", from, to),
-                                            )
-                                            .attach_debug_object("msg (the message that could not be normalized)", &msg)
-                                            .attach_debug_object("step", step)
-                                        })?;
-                                    }
-                                }
-                                let mut nto = nodes[to].lock().expect("Locking node failed");
-                                if !nto.get_connections().contains(&from) {
-                                    return Err(BPError::new(
-                                        "BPGraph::send".to_owned(),
-                                        format!(
-                                            "Trying to send a message along a non-existent edge ({} -> {}).",
-                                            from, to
-                                        ),
-                                    )
-                                    .attach_debug_object("step", step)
-                                    .attach_debug_object("edges", nto.get_connections())
-                                    .attach_debug_object("name of node to sending to", nto.get_name()));
-                                }
-                                nto.send_post(from, msg);
-                            }
-                        }
-                    }
-                    Ok(())
-                }));
-            }
-            for handle in handles {
-                handle.join().expect("Joining threads failed")?;
-            }
-            #[cfg(feature = "progress_output")]
-            {
-                let whitespace_padding2 = std::iter::repeat(" ").take(30).collect::<String>(); //Not very elegant...
-                print!("{}{}\r", whitespace_padding2, &whitespace_padding);
-                std::io::stdout().flush();
-            }
-            Ok(())
-        }).expect("Scoped threading failed")
-    }
-
-    fn create_messages_threaded(
-        &mut self,
-        thread_count: u32,
-    ) -> BPResult<Vec<(NodeIndex, Vec<(NodeIndex, MsgT)>)>> {
-        info_print!("Creating messages with {} threads..", thread_count);
-        let step = self.step;
-        let mut nodes_ = Vec::new();
-        for (i, n) in self.nodes.iter_mut().enumerate() {
-            if n.is_ready(step)? {
-                nodes_.push((i, n));
-            }
-            else {
-                n.read_post();
-            }
-        }
-        let mut min_batch_size = 5;
-        #[cfg(feature = "progress_output")]
-        let (whitespace_padding, step) = {
-            let max_diff_in_number = f64::log10(nodes_.len() as f64) as usize + 1;
-            (
-                &(std::iter::repeat(" ")
-                    .take(max_diff_in_number)
-                    .collect::<String>()),
-                self.step.clone(),
-            )
-        };
-        thread_print!("Minimal batch size is {}", min_batch_size);
-        let mut nodes = Arc::new(Mutex::new(nodes_));
-
-        crossbeam::scope(|scope| {
-            let mut handles = Vec::with_capacity(thread_count as usize);
-            let mut result = Vec::new();
-            for i in 0..thread_count {
-                //Force capture by ref
-                let nodes = &nodes;
-                handles.push(scope.spawn(move |_| {
-                    let mut thread_msgs = Vec::new();
-                    loop {
-                        //nodes is locked in this block
-                        let chunck: Vec<(NodeIndex, &mut Node<T, MsgT, CtrlMsgT, CtrlMsgAT>)> = {
-                            thread_print!("Thread {} waiting for lock..", i);
-                            let mut nodes = nodes.lock().expect("Locking mutex failed.");
-                            thread_print!("Thread {} has lock..", i);
-                            let len = nodes.len();
-                            if len == 0 {
-                                break;
-                            }
-
-                            #[cfg(feature = "progress_output")]
-                            {
-                                print!(
-                                    "Step {}: {} nodes left{}\r",
-                                    step,
-                                    nodes.len(),
-                                    &whitespace_padding
-                                );
-                                std::io::stdout().flush();
-                            }
-                            let mut batch_size = std::cmp::max(
-                                min_batch_size,
-                                nodes.len() / (2 * thread_count) as usize,
-                            ); //TODO
-                            let chunck = nodes
-                                .drain(0..std::cmp::min(batch_size as usize, len))
-                                .collect();
-                            chunck
-                        };
-                        thread_print!("Thread {} working on {} nodes..", i, chunck.len());
-                        if chunck.is_empty() {
-                            break;
-                        }
-                        for (idx, node) in chunck {
-                            thread_msgs.push((
-                                idx,
-                                node.create_messages().map_err(|e| {
-                                    e.attach_debug_object("idx (node index)", idx)
-                                        .attach_debug_object(
-                                            "node.get_name() (node name)",
-                                            node.get_name(),
-                                        )
-                                        .attach_debug_object("step", step)
-                                })?,
-                            ));
-                        }
-                    }
-                    thread_print!("Thread {} finished.", i);
-                    Ok(thread_msgs)
-                }));
-            }
-            for handle in handles {
-                result.extend(handle.join().expect("Joining threads failed")?);
-            }
-            #[cfg(feature = "progress_output")]
-            {
-                let whitespace_padding2 = std::iter::repeat(" ").take(30).collect::<String>(); //Not very elegant...
-                print!("{}{}\r", whitespace_padding2, &whitespace_padding);
-                std::io::stdout().flush();
-            }
-            Ok(result)
-        })
-        .expect("Scoped threading failed.")
-    }
-
-    pub fn propagate_step_threaded(&mut self, thread_count: u32) -> BPResult<()> {
-        if self.check_validity && !self.is_valid() {
-            return Err(BPError::new(
-                "propagate_step_threaded".to_owned(),
-                "Graph is invalid".to_owned(),
-            ));
-        }
-        info_print!("Propagating step {}..", self.step);
-        debug_print!("Creating messages..");
-        let outgoing_msgs = self.create_messages_threaded(thread_count)?;
-        info_print!("Sending messages (threaded)");
-        self.send_threaded(outgoing_msgs, thread_count)?;
-        info_print!("Done propagating step {}\n", self.step);
-        self.step += 1;
-        Ok(())
-    }
-
-    pub fn propagate_threaded(&mut self, steps: usize, thread_count: u32) -> BPResult<()> {
-        if !self.is_initialized() {
-            return Err(BPError::new(
-                "propagate_threaded".to_owned(),
-                "Graph is not initialized".to_owned(),
-            ));
-        }
-        for _ in 0..steps {
-            self.propagate_step_threaded(thread_count)?;
-        }
-        Ok(())
-    }
-    pub fn factor_nodes_count(&self) -> usize {
-        self.nodes.iter().filter(|&n| n.is_factor()).count()
-    }
-    pub fn variable_nodes_count(&self) -> usize {
-        self.nodes.iter().filter(|&n| !n.is_factor()).count()
-    }
-    pub fn nodes_count(&self) -> usize {
-        self.nodes.len()
-    }
+    } */
 }
 
 impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> BPGraph<T, MsgT, CtrlMsgT, CtrlMsgAT>
@@ -330,10 +67,10 @@ where
     T: Clone + Debug,
     MsgT: Clone,
 {
-    pub fn get_inbox(&self, node_index: NodeIndex) -> BPResult<Vec<(NodeIndex, MsgT)>> {
+    /* pub fn get_inbox(&self, node_index: NodeIndex) -> BPResult<Vec<(NodeIndex, MsgT)>> {
         let node = self.get_node(node_index)?;
         Ok(node.clone_inbox())
-    }
+    } */
 }
 
 impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> BPGraph<T, MsgT, CtrlMsgT, CtrlMsgAT>
@@ -342,11 +79,13 @@ where
 {
     pub fn new() -> Self {
         BPGraph {
-            nodes: Vec::new(),
+            check_nodes: Vec::new(),
+            var_nodes: Vec::new(),
             step: 0,
             normalize: true,
             check_validity: false,
             num_var_nodes: 0,
+            num_check_nodes: 0,
         }
     }
 
@@ -354,25 +93,30 @@ where
         self.normalize = normalize;
     }
 
-    pub fn send_control_message(
+    /* pub fn send_control_message(
         &mut self,
         node_index: NodeIndex,
         ctrl_msg: CtrlMsgT,
     ) -> BPResult<CtrlMsgAT> {
         self.get_node_mut(node_index)?
             .send_control_message(ctrl_msg)
-    }
+    } */
 
     pub fn set_check_validity(&mut self, value: bool) {
         self.check_validity = value;
     }
 
-    pub fn is_initialized(&self) -> bool {
-        self.nodes.iter().all(|n| n.is_initialized())
+    pub fn is_initialized_check(&self) -> bool {
+        self.check_nodes.iter().all(|n| n.is_initialized())
     }
 
-    pub fn reset(&mut self) -> BPResult<()> {
-        self.nodes.iter_mut().try_for_each(|n| n.reset())
+    pub fn is_initialized_var(&self) -> bool {
+        self.var_nodes.iter().all(|n| n.is_initialized())
+    }
+
+    /* pub fn reset(&mut self) -> BPResult<()> {
+        self.check_nodes.iter_mut().try_for_each(|n| n.reset())
+        self.var_nodes.iter_mut().try_for_each(|n| n.reset())
     }
 
     pub fn initialize_node(
@@ -409,31 +153,31 @@ where
             self.propagate_step()?;
         }
         Ok(())
-    }
+    } */
 
     pub fn propagate_step(&mut self) -> BPResult<()> {
-        if self.check_validity && !self.is_valid() {
+        /* if self.check_validity && !self.is_valid() {
             return Err(BPError::new(
                 "BPGraph::propagate_step".to_owned(),
                 "Invalid graph".to_owned(),
             ));
-        }
+        } */
         if self.step == 0 {
             info_print!("Initialising matrices");
-            self.initialise_matrix()
+            self.initialise_matrix();
         }
 
         info_print!("Propagating step {}", self.step);
-        for (index,node) in self.nodes.iter_mut().enumerate() {
+        let num_check_nodes = self.check_nodes.len();
+        for index in 0..num_check_nodes {
             //There should be a better way to iterate through check nodes
-            if !node.is_variable {
-                info_print!("Creating messages from var nodes");
-                self.create_messages_var(index);
-                info_print!("Creating messages in check nodes");
-                self.create_messages_check(index);
-                info_print!("Updating log_prob");
-                self.update_log_prob(index);
-            }
+            let node = self.get_node_check(index)?;
+            info_print!("Creating messages from var nodes");
+            self.create_messages_var(index);
+            info_print!("Creating messages in check nodes");
+            self.create_messages_check(index);
+            info_print!("Updating log_prob");
+            self.update_log_prob(index);
         }
         info_print!("Done propagating step {}\n", self.step);
         self.step += 1;
@@ -442,88 +186,82 @@ where
 
     //Error messages for this
     pub fn create_messages_var(&mut self, check_node_index : usize) -> BPResult<()> {
-        let check_node: &Node<T, MsgT, CtrlMsgT, CtrlMsgAT> = self.get_node(check_node_index)?;
-        let check_node_connections = check_node.get_connections();
         let variable_nodes_num = self.num_var_nodes;
-        for var_node_index in check_node_connections {
-            let r = Node::get_matrix_value(check_node, var_node_index);
-            let var_node: &mut Node<T, MsgT, CtrlMsgT, CtrlMsgAT> = self.get_node_mut(*var_node_index)?;
-            let log_prob_curr: MsgT = Node::get_log_prob(var_node);
-            if r.is_valid() {
-                let mut r_log: MsgT = var_node.get_log(r);
-                let mut q_log = var_node.subtract(log_prob_curr,r_log);
-                let mut q = var_node.exponent(q_log);
-                //The below function doesn't work have to change
-                var_node.update_push(check_node_index-variable_nodes_num, q);
-            }   
-            else {
-                let mut q = var_node.exponent(log_prob_curr);
-                var_node.update_push(check_node_index-variable_nodes_num, q);
-            }
+        let check_node = &self.check_nodes[check_node_index];
+        for var_node_index in 0..variable_nodes_num {
+            let r = Node::get_matrix_value(check_node,&var_node_index);
+            if let Some(var_node) = self.var_nodes.get_mut(var_node_index) { 
+                let log_prob_curr: MsgT = Node::get_log_prob(var_node);
+                if r.is_valid() {
+                    let mut r_log: MsgT = var_node.get_log(r);
+                    let mut q_log = var_node.subtract(log_prob_curr,r_log);
+                    let mut q = var_node.exponent(q_log);
+                    //The below function doesn't work have to change
+                    var_node.update_push(check_node_index-variable_nodes_num, q);
+                }   
+                else {
+                    let mut q = var_node.exponent(log_prob_curr);
+                    var_node.update_push(check_node_index-variable_nodes_num, q);
+                }
+            };
         }
-        return Ok(())
+        Ok(())
     }
 
     //Error messages for this
     pub fn create_messages_check(&mut self, check_node_index : usize) -> BPResult<()> {
-        let check_node = self.get_node_mut(check_node_index)?;
-        let check_node_connections = check_node.get_connections();
-        let variable_nodes_num = self.num_var_nodes;
-        let mut var_messages: Vec<(usize,MsgT)> = Vec::with_capacity(check_node_connections.len());
-        for var_node_index in check_node_connections {
-            let var_node = self.get_node(*var_node_index)?;
-            var_messages.push((*var_node_index, *(var_node.get_matrix_value(&(check_node_index-variable_nodes_num)))));
+        if let Some(check_node) = self.check_nodes.get_mut(check_node_index) {
+            let check_node_connections = check_node.get_connections();
+            let mut var_messages: Vec<(usize,MsgT)> = Vec::with_capacity(check_node_connections.len());
+            for var_node_index in check_node_connections {
+                let var_node = &self.var_nodes[*var_node_index];
+                let r = var_node.get_matrix_value(&(check_node_index).clone());
+                var_messages.push((*var_node_index, (var_node.get_matrix_value(&(check_node_index)))));
+            }
+            //Order satisfied in this??
+            let check_messages = check_node.node_function.node_function(var_messages)?;
+            check_node.inbox = check_messages;
         }
-        //Order satisfied in this??
-        let check_messages = check_node.node_function.node_function(var_messages)?;
-        check_node.inbox = check_messages;
         Ok(())
     }
 
     pub fn update_log_prob(&mut self, check_node_index : usize) -> BPResult<()>{
-        let check_node = self.get_node_mut(check_node_index)?;
-        let check_node_connections = check_node.get_connections();
-        let variable_nodes_num = self.num_var_nodes;
-        for var_node_index in check_node_connections {
-            let mut var_node = self.get_node_mut(*var_node_index)?;
-            let r = check_node.get_matrix_value(var_node_index);
-            let q = var_node.get_matrix_value(&(check_node_index-&variable_nodes_num));
-            var_node.update_log_prob(q,r);
+        if let Some(check_node) = self.check_nodes.get_mut(check_node_index) {
+            let check_node_connections = check_node.get_connections();
+            let variable_nodes_num = self.num_var_nodes;
+            for var_node_index in check_node_connections {
+                if let  Some(var_node) = self.var_nodes.get_mut(*var_node_index) {
+                    let r = check_node.get_matrix_value(var_node_index);
+                    let q = var_node.get_matrix_value(&(check_node_index-&variable_nodes_num));
+                    var_node.update_log_prob(q,r);
+                }
+            }
         }
         Ok(())
     }
 
     //Error messages for this
-    pub fn initialise_matrix(&self) -> () {
-        let variable_nodes_num = self.num_var_nodes;
-        for (i,node) in self.nodes.iter_mut().enumerate() {
-            let node_connections = node.get_connections();
-            if node.is_variable {
+    pub fn initialise_matrix(&mut self) -> () {
+        for (i,node) in self.var_nodes.iter_mut().enumerate() {
+            let node_connections = &node.connections;
                 //Doesnt matter if there is mut here
-                let mut initial_pdf = node.get_prior();
-                for node_index in node_connections {
-                    node.send_post(*node_index, initial_pdf);
-                }
+            for node_index in node_connections {
+                let initial_pdf = node.get_prior();
+                node.inbox.push((*node_index, initial_pdf));
             }
-            else {
-                //Doesnt matter if there is mut here
-                let mut zero_pdf = node.get_zero_pdf();
-                for node_index in node_connections {
-                    node.send_post(*node_index-variable_nodes_num, zero_pdf);
-                }
+        }
+        for(i, node) in self.check_nodes.iter_mut().enumerate() {
+            let node_connections = &node.connections;
+            //Doesnt matter if there is mut here
+            for node_index in node_connections {
+                let zero_pdf = node.get_zero_pdf();
+                node.inbox.push((*node_index, zero_pdf));
             }
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.nodes.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
-    }
     //Returns Node (from) -> (Node(to) -> Msg)
-    fn create_messages(&mut self) -> BPResult<Vec<(NodeIndex, Vec<(NodeIndex, MsgT)>)>> {
+    /* fn create_messages(&mut self) -> BPResult<Vec<(NodeIndex, Vec<(NodeIndex, MsgT)>)>> {
         let mut res = Vec::new();
         for (i, node) in self.nodes.iter_mut().enumerate() {
             if node.is_ready(self.step)? {
@@ -588,11 +326,7 @@ where
             }
         }
         Ok(())
-    }
-
-    pub fn reserve(&mut self, number_nodes: usize) {
-        self.nodes.reserve(number_nodes);
-    }
+    } */
 
     pub fn add_node(
         &mut self,
@@ -600,25 +334,41 @@ where
         node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
         is_var: bool,
     ) -> NodeIndex {
-        self.nodes.push(Node::<T, MsgT, CtrlMsgT, CtrlMsgAT>::new(
-            name,
-            node_function,
-            is_var,
-        ));
         if is_var {
+            self.var_nodes.push(Node::<T, MsgT, CtrlMsgT, CtrlMsgAT>::new(
+                name,
+                node_function,
+                is_var,
+            ));
             self.num_var_nodes+=1;
+            self.var_nodes.len()-1
         }
-        self.nodes.len() - 1
+        else {
+            self.check_nodes.push(Node::<T, MsgT, CtrlMsgT, CtrlMsgAT>::new(
+                name,
+                node_function,
+                is_var,
+            ));
+            self.check_nodes.len()-1
+        }
     }
 
-    pub fn add_node_directly(&mut self, node: Node<T, MsgT, CtrlMsgT, CtrlMsgAT>) -> NodeIndex {
-        self.nodes.push(node);
-        self.nodes.len() - 1
+    pub fn add_node_directly(&mut self, node: Node<T, MsgT, CtrlMsgT, CtrlMsgAT>,is_var: bool) -> NodeIndex {
+        if is_var {
+            self.var_nodes.push(node);
+            self.num_var_nodes+=1;
+            self.var_nodes.len()-1
+        }
+        else {
+            self.check_nodes.push(node);
+            self.num_check_nodes+=1;
+            self.check_nodes.len()-1
+        }
     }
 
-    pub fn add_edge(&mut self, node0: NodeIndex, node1: NodeIndex) -> BPResult<()> {
+    pub fn add_edge(&mut self, var: NodeIndex, check: NodeIndex) -> BPResult<()> {
         debug_print!("Connecting nodes {} and {}", node0, node1);
-        if self.get_node(node0)?.is_factor() == self.get_node(node1)?.is_factor() {
+        /* if self.get_node_check(node0)?.is_factor() == self.get_node_check(node1)?.is_factor() {
             debug_print!("Cannot link nodes: {} and {}", node0, node1);
             return Err(BPError::new(
                 "BPGraph::add_edge".to_owned(),
@@ -627,34 +377,55 @@ where
                     node0, node1
                 ),
             ));
-        }
+        } */
         {
-            let n0 = self.get_node_mut(node0)?;
-            n0.add_edge(node1)?;
+            let n0 = self.get_node_mut_var(var)?;
+            n0.add_edge(check)?;
         }
-        let n1 = self.get_node_mut(node1)?;
-        n1.add_edge(node0)?;
+        let n1 = self.get_node_mut_check(check)?;
+        n1.add_edge(var)?;
         Ok(())
     }
 
-    fn get_node(&self, node: NodeIndex) -> BPResult<&Node<T, MsgT, CtrlMsgT, CtrlMsgAT>> {
-        let len = self.len();
-        self.nodes.get(node).ok_or(BPError::new(
+    fn get_node_check(&self, node: NodeIndex) -> BPResult<&Node<T, MsgT, CtrlMsgT, CtrlMsgAT>> {
+        let len = self.check_nodes.len();
+        self.check_nodes.get(node).ok_or(BPError::new(
             "BPGraph::get_node".to_owned(),
             format!("Index {} out of bounds ({})", node, len),
         ))
     }
-    fn get_node_mut(
+
+    fn get_node_var(&self, node: NodeIndex) -> BPResult<&Node<T, MsgT, CtrlMsgT, CtrlMsgAT>> {
+        let len = self.var_nodes.len();
+        self.var_nodes.get(node).ok_or(BPError::new(
+            "BPGraph::get_node".to_owned(),
+            format!("Index {} out of bounds ({})", node, len),
+        ))
+    }
+
+    fn get_node_mut_check(
         &mut self,
         node: NodeIndex,
     ) -> BPResult<&mut Node<T, MsgT, CtrlMsgT, CtrlMsgAT>> {
-        let len = self.len();
-        self.nodes.get_mut(node).ok_or(BPError::new(
+        let len = self.check_nodes.len();
+        self.check_nodes.get_mut(node).ok_or(BPError::new(
             "BPGraph::get_node".to_owned(),
             format!("Index {} out of bounds ({})", node, len),
         ))
     }
-    pub fn is_valid(&self) -> bool {
+
+    fn get_node_mut_var(
+        &mut self,
+        node: NodeIndex,
+    ) -> BPResult<&mut Node<T, MsgT, CtrlMsgT, CtrlMsgAT>> {
+        let len = self.var_nodes.len();
+        self.var_nodes.get_mut(node).ok_or(BPError::new(
+            "BPGraph::get_node".to_owned(),
+            format!("Index {} out of bounds ({})", node, len),
+        ))
+    }
+
+    /* pub fn is_valid(&self) -> bool {
         debug_print!("Checking graph");
         self.nodes
             .iter()
@@ -702,10 +473,10 @@ where
             }
         }
         true
-    }
+    } */
 }
 
-impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> std::fmt::Display
+/* impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> std::fmt::Display
     for BPGraph<T, MsgT, CtrlMsgT, CtrlMsgAT>
 where
     T: Debug,
@@ -716,4 +487,4 @@ where
         }
         writeln!(f)
     }
-}
+} */

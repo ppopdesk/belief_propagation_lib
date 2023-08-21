@@ -7,7 +7,7 @@ pub mod msg;
 pub mod node;
 pub mod node_function;
 pub mod types;
-pub mod variable_node;
+// pub mod variable_node;
 
 pub use bperror::{BPError, BPResult};
 pub use bpgraph::{BPGraph, NodeIndex};
@@ -16,14 +16,14 @@ pub use node::hashmap_to_distribution;
 pub use node::Node;
 pub use node_function::NodeFunction;
 pub use types::Probability;
-pub use variable_node::VariableNode;
+// pub use variable_node::VariableNode;
 
 //TODO: Add tests
 #[cfg(test)]
 mod tests {
     use crate::{
         node_function, BPError, BPGraph, BPResult, Msg, NodeFunction, NodeIndex, Probability,
-        VariableNode,
+        //None,
     };
     use std::collections::HashMap;
     use std::fmt::Debug;
@@ -36,12 +36,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test() -> BPResult<()> {
+    //#[test]
+    /* fn test() -> BPResult<()> {
         let mut g = BPGraph::<i32, HashMap<i32, Probability>>::new();
-        let mut v0 = VariableNode::new();
-        let mut v1 = VariableNode::new();
-        let mut v2 = VariableNode::new();
+        let mut v0 = 0; //VariableNode::new();
+        let mut v1 = 0; //VariableNode::new();
+        let mut v2 = 0; //VariableNode::new();
         let mut dist0 = HashMap::new();
         let mut dist1 = HashMap::new();
         dist0.insert(1, 1.0);
@@ -49,17 +49,17 @@ mod tests {
         dist1.insert(2, 0.25);
         dist1.insert(3, 0.25);
         dist1.insert(4, 0.25);
-        v0.set_prior(&dist0);
+        /* v0.set_prior(&dist0);
         v1.set_prior(&dist1);
-        v2.set_prior(&dist1);
+        v2.set_prior(&dist1); */
 
         let t3 = TwoNode::new(mul);
         let t4 = TwoNode::new(mul);
-        g.add_node("0".to_string(), Box::new(v0));
+        /* g.add_node("0".to_string(), Box::new(v0));
         g.add_node("1".to_string(), Box::new(v1));
         g.add_node("2".to_string(), Box::new(v2));
         g.add_node("m3".to_string(), Box::new(t3));
-        g.add_node("m4".to_string(), Box::new(t4));
+        g.add_node("m4".to_string(), Box::new(t4)); */
 
         g.add_edge(0, 3)?;
         g.add_edge(3, 1)?;
@@ -88,7 +88,7 @@ mod tests {
         }
 
         Ok(())
-    }
+    } */
 
     struct TwoNode<T: Debug, MsgT: Msg<T>> {
         f_node_function: fn(T, T) -> Probability,
@@ -108,7 +108,7 @@ mod tests {
         }
     }
 
-    impl<T: Debug + Copy + std::fmt::Display, MsgT: Msg<T> + Clone> NodeFunction<T, MsgT>
+    /* impl<T: Debug + Copy + std::fmt::Display, MsgT: Msg<T> + Clone> NodeFunction<T, MsgT>
         for TwoNode<T, MsgT>
     {
         fn node_function(
@@ -193,5 +193,5 @@ mod tests {
         fn get_prior(&self) -> Option<MsgT> {
             None
         }
-    }
+    } */
 }

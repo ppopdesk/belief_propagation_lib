@@ -9,7 +9,7 @@ where
     T: Debug,
 {
     pub name: String,
-    connections: Vec<NodeIndex>,
+    pub connections: Vec<NodeIndex>,
     pub inbox: Vec<(NodeIndex, MsgT)>,
     pub node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
     pub is_variable : bool,
@@ -73,6 +73,7 @@ where
         self.is_initialized = false;
         Ok(())
     }
+
     pub fn number_inputs(&self) -> Option<usize> {
         self.node_function.number_inputs()
     }
@@ -114,18 +115,26 @@ where
     }
      
     pub fn get_prior(&self) -> MsgT {
-        let Some(prior) = self.node_function.get_prior();
-        return prior;
+        if let Some(prior) = self.node_function.get_prior() {
+            return prior;
+        }
+        else {
+            return self.node_function.get_zero_pdf();
+        }
     }
 
     pub fn get_log_prob(&self) -> MsgT {
         //below should only be for variable nodes
-        let Some(log_prob) = self.node_function.get_log_prob();
-        return log_prob;
+        if let Some(log_prob) = self.node_function.get_log_prob() {
+            return log_prob;
+        }
+        else {
+            return self.node_function.get_zero_pdf();
+        }
     }
 
     pub fn get_zero_pdf(&self) -> MsgT {
-        let Some(zero_pdf) = self.node_function.get_zero_pdf();
+        let zero_pdf = self.node_function.get_zero_pdf();
         return zero_pdf;
     }
 
@@ -133,7 +142,7 @@ where
         self.inbox[node_index] = (node_index,msg);
     }
 
-    pub fn get_log(&mut self, r: &MsgT) -> MsgT {
+    pub fn get_log(&mut self, r: MsgT) -> MsgT {
         self.node_function.get_log(r)
     }
 
@@ -145,7 +154,7 @@ where
         self.node_function.exponent(p)
     }
 
-    pub fn update_log_prob(&mut self, q: &MsgT, r: &MsgT) {
+    pub fn update_log_prob(&mut self, q: MsgT, r: MsgT) {
         self.node_function.update_log_prob(q,r);
     }
 
@@ -173,9 +182,14 @@ where
         //TODO: Check in debug mode if all messages arrived?
         self.node_function.node_function(incoming_msgs)
     }
-    pub fn get_matrix_value(&self, node_index : &usize) -> &MsgT {
-      let Some((to,msg)) = self.inbox.get(*node_index);
-      return msg;
+    pub fn get_matrix_value(&self, node_index : &usize) -> MsgT {
+        if let Some((to,msg)) = self.inbox.get(*node_index) {
+            let msg_new = (msg.clone());
+            return msg_new;
+        }
+        else {
+            return self.node_function.get_zero_pdf();
+        }
     }
 }
 

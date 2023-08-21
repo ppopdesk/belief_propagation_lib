@@ -1,11 +1,12 @@
 use crate::{BPError, BPResult, Probability};
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::clone::Clone;
 
 //TODO: Relax restrictions?
 //Disadvantage: Not always needed
 //Advantage: Does it really make sense to have a non iterable message? It could lead to confusing problems?
-pub trait Msg<T>: Debug
+pub trait Msg<T>: Debug + Clone
 where
     Self: IntoIterator<Item = (T, Probability)>,
 {
@@ -57,7 +58,7 @@ where
 
 impl<T> Msg<T> for HashMap<T, Probability>
 where
-    T: std::hash::Hash + Eq + Debug,
+    T: std::hash::Hash + Eq + Debug+ Clone,
 {
     fn new() -> Self {
         HashMap::new()
