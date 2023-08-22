@@ -177,7 +177,14 @@ where
 {
 
     pub fn get_result(&self) -> BPResult<Option<std::collections::HashMap<T, Probability>>> {
-        let prior = self.node_function.get_prior();
+        return if let Some(result) = self.node_variable.clone() {
+            let mut result_hm = msg_to_hashmap(result);
+            norm_hashmap(&mut result_hm);
+            Ok(Some(result_hm))
+        } else {
+            Ok(None)
+        };
+        /* let prior = self.node_function.get_prior();
         if self.inbox.is_empty() {
             // TODO: use everything
             return if let Some(prior) = prior {
@@ -215,7 +222,7 @@ where
             }
             //res = self.inbox.iter().fold_result(res, |a, b| mult_hashmaps(a, msg_to_hashmap(b.1.clone()))?);
             Ok(Some(res))
-        }
+        } */
     }
 }
 

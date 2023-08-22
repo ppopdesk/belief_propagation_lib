@@ -48,18 +48,18 @@ where
     T: Copy + Eq + Debug + std::hash::Hash,
     MsgT: Clone,
 {
-    /* pub fn get_result(
+    pub fn get_result(
         &self,
         node_index: NodeIndex,
     ) -> BPResult<Option<std::collections::HashMap<T, Probability>>> {
-        let n = self.get_node(node_index)?;
+        let n = self.get_node_var(node_index)?;
         n.get_result().map_err(|e| {
             e.attach_info_str(
                 "BPGraph::get_result",
                 format!("Failed to retrieve result from node {}", node_index),
             )
         })
-    } */
+    }
 }
 
 impl<T, MsgT: Msg<T>, CtrlMsgT, CtrlMsgAT: Default> BPGraph<T, MsgT, CtrlMsgT, CtrlMsgAT>
