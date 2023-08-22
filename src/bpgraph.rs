@@ -93,15 +93,6 @@ where
         self.normalize = normalize;
     }
 
-    /* pub fn send_control_message(
-        &mut self,
-        node_index: NodeIndex,
-        ctrl_msg: CtrlMsgT,
-    ) -> BPResult<CtrlMsgAT> {
-        self.get_node_mut(node_index)?
-            .send_control_message(ctrl_msg)
-    } */
-
     pub fn set_check_validity(&mut self, value: bool) {
         self.check_validity = value;
     }
@@ -130,10 +121,10 @@ where
         let node = self.get_node_mut(node_index)?;
         node.initialize()?;
         Ok(())
-    }
+    } */
 
-    pub fn initialize(&mut self) -> BPResult<()> {
-        self.nodes.iter_mut().try_for_each(|node| {
+    pub fn initialize_check(&mut self) -> BPResult<()> {
+        self.check_nodes.iter_mut().try_for_each(|node| {
             if !node.is_initialized() {
                 node.initialize()
             } else {
@@ -141,7 +132,17 @@ where
             }
         })
     }
-*/
+
+    pub fn initialize_var(&mut self) -> BPResult<()> {
+        self.var_nodes.iter_mut().try_for_each(|node| {
+            if !node.is_initialized() {
+                node.initialize()
+            } else {
+                Ok(())
+            }
+        })
+    }
+
     pub fn propagate(&mut self, steps: usize) -> BPResult<()> {
         /* if !self.is_initialized() {
             return Err(BPError::new(
