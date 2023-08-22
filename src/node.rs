@@ -25,7 +25,7 @@ where
         name: String,
         node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
         is_variable: bool,
-        prior: Option<MsgT>,
+        log_prior: Option<MsgT>,
     ) -> Self {
         let mut inbox = Vec::new();
         let num_input = node_function.number_inputs();
@@ -39,7 +39,7 @@ where
             inbox,
             node_function,
             is_variable,
-            node_variable: prior,
+            node_variable: log_prior,
         }
     }
     pub fn send_control_message(&mut self, ctrl_msg: CtrlMsgT) -> BPResult<CtrlMsgAT> {
@@ -177,8 +177,10 @@ where
 {
 
     pub fn get_result(&self) -> BPResult<Option<std::collections::HashMap<T, Probability>>> {
-        return if let Some(result) = self.node_variable.clone() {
-            let mut result_hm = msg_to_hashmap(result);
+        return if let Some(mut result) = self.node_variable.clone() {
+            let mut log_result = result.exponent();
+            log_result.normalize();
+            let mut result_hm = msg_to_hashmap(log_result);
             norm_hashmap(&mut result_hm);
             Ok(Some(result_hm))
         } else {

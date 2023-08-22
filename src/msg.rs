@@ -20,6 +20,7 @@ where
     fn add(&self, second: &Self) -> Self;
     fn subtract(self, second: Self) -> Self;
     fn exponent(self) -> Self;
+    fn is_zero(self) -> bool;
     fn mult_msg(&mut self, other: &Self);
     fn mult_msg_weighted(&mut self, other: &Self, alpha: f64) {
         todo!("Not implemented.");

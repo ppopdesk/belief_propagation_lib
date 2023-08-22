@@ -171,8 +171,6 @@ where
         info_print!("Propagating step {}", self.step);
         let num_check_nodes = self.check_nodes.len();
         for index in 0..num_check_nodes {
-            //There should be a better way to iterate through check nodes
-            let node = self.get_node_check(index)?;
             info_print!("Creating messages from var nodes");
             self.create_messages_var(index);
             info_print!("Creating messages in check nodes");
@@ -193,15 +191,17 @@ where
             if let Some(r) = Node::get_matrix_value(check_node, &var_node_index) {
                 if let Some(var_node) = self.var_nodes.get_mut(var_node_index) { 
                     if let Some(log_prob_curr) = var_node.node_variable.clone() {
-                        if r.is_valid() {
+                        if r.is_valid() && !(r.clone()).is_zero() {
                             let mut r_log: MsgT = r.get_log();
+                            r_log.normalize();
                             let mut q_log = log_prob_curr.subtract(r_log);
                             let mut q = q_log.exponent();
-                            //The below function doesn't work have to change
+                            q.normalize();
                             var_node.update_push(check_node_index, q);
-                        }   
+                        }
                         else {
                             let mut q = log_prob_curr.exponent();
+                            q.normalize();
                             var_node.update_push(check_node_index, q);
                         }
                     };
@@ -218,11 +218,10 @@ where
             let mut var_messages: Vec<(usize,MsgT)> = Vec::with_capacity(check_node_connections.len());
             for var_node_index in check_node_connections {
                 let var_node = &self.var_nodes[*var_node_index];
-                if let Some(r) = var_node.get_matrix_value(&(check_node_index).clone()) {
-                    var_messages.push((*var_node_index, r));
+                if let Some(q) = var_node.get_matrix_value(&(check_node_index).clone()) {
+                    var_messages.push((*var_node_index, q));
                 };
             }
-            //Order satisfied in this??
             let check_messages = check_node.node_function.node_function(var_messages)?;
             check_node.inbox = check_messages;
         }
@@ -234,11 +233,13 @@ where
             let check_node_connections = check_node.get_connections();
             let variable_nodes_num = self.num_var_nodes;
             for var_node_index in check_node_connections {
-                if let  Some(var_node) = self.var_nodes.get_mut(*var_node_index) {
+                if let Some(var_node) = self.var_nodes.get_mut(*var_node_index) {
                     if let Some(r) = check_node.get_matrix_value(var_node_index) {
-                        if let Some(q) = var_node.get_matrix_value(&(check_node_index-&variable_nodes_num)) {
+                        let mut r_mut = r.clone();
+                        r_mut.normalize();
+                        if let Some(q) = var_node.get_matrix_value(&(check_node_index)) {
                             let mut log_p = q.get_log();
-                            let mut log_r = r.get_log();
+                            let mut log_r = r_mut.get_log();
                             var_node.node_variable = Some(log_p.add(&log_r));
                         };
                     };
@@ -343,14 +344,14 @@ where
         name: String,
         node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
         is_var: bool,
-        prior: Option<MsgT>,
+        log_prior: Option<MsgT>,
     ) -> NodeIndex {
         if is_var {
             self.var_nodes.push(Node::<T, MsgT, CtrlMsgT, CtrlMsgAT>::new(
                 name,
                 node_function,
                 is_var,
-                prior,
+                log_prior,
             ));
             self.num_var_nodes+=1;
             self.var_nodes.len()-1
@@ -360,8 +361,9 @@ where
                 name,
                 node_function,
                 is_var,
-                prior,
+                log_prior,
             ));
+            self.num_check_nodes+=1;
             self.check_nodes.len()-1
         }
     }
