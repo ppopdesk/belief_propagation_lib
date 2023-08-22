@@ -10,12 +10,6 @@ pub trait NodeFunction<T, MsgT: Msg<T>, CtrlMsgT = (), CtrlMsgAT: Default = ()> 
     fn is_ready(&self, recv_from: &Vec<(NodeIndex, MsgT)>, current_step: usize) -> BPResult<bool>;
     fn reset(&mut self) -> BPResult<()>;
     fn get_prior(&self) -> Option<MsgT>;
-    fn get_log_prob(&self) -> Option<MsgT>;
-    fn get_zero_pdf(&self) -> MsgT;
-    fn get_log(&mut self, r: MsgT) -> MsgT;
-    fn update_log_prob(&mut self, q: MsgT, r: MsgT);
-    fn subtract(&mut self, p_1: MsgT, p_2: MsgT) -> MsgT;
-    fn exponent(&mut self, p : MsgT) -> MsgT;
     fn send_control_message(&mut self, ctrl_msg: CtrlMsgT) -> BPResult<CtrlMsgAT> {
         Ok(CtrlMsgAT::default())
     }

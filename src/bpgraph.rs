@@ -189,20 +189,22 @@ where
         let variable_nodes_num = self.num_var_nodes;
         let check_node = &self.check_nodes[check_node_index];
         for var_node_index in 0..variable_nodes_num {
-            let r = Node::get_matrix_value(check_node,&var_node_index);
-            if let Some(var_node) = self.var_nodes.get_mut(var_node_index) { 
-                let log_prob_curr: MsgT = Node::get_log_prob(var_node);
-                if r.is_valid() {
-                    let mut r_log: MsgT = var_node.get_log(r);
-                    let mut q_log = var_node.subtract(log_prob_curr,r_log);
-                    let mut q = var_node.exponent(q_log);
-                    //The below function doesn't work have to change
-                    var_node.update_push(check_node_index-variable_nodes_num, q);
-                }   
-                else {
-                    let mut q = var_node.exponent(log_prob_curr);
-                    var_node.update_push(check_node_index-variable_nodes_num, q);
-                }
+            if let Some(r) = Node::get_matrix_value(check_node, &var_node_index) {
+                if let Some(var_node) = self.var_nodes.get_mut(var_node_index) { 
+                    if let Some(log_prob_curr) = var_node.node_variable.clone() {
+                        if r.is_valid() {
+                            let mut r_log: MsgT = r.get_log();
+                            let mut q_log = log_prob_curr.subtract(r_log);
+                            let mut q = q_log.exponent();
+                            //The below function doesn't work have to change
+                            var_node.update_push(check_node_index, q);
+                        }   
+                        else {
+                            let mut q = log_prob_curr.exponent();
+                            var_node.update_push(check_node_index, q);
+                        }
+                    };
+                };
             };
         }
         Ok(())
@@ -215,8 +217,9 @@ where
             let mut var_messages: Vec<(usize,MsgT)> = Vec::with_capacity(check_node_connections.len());
             for var_node_index in check_node_connections {
                 let var_node = &self.var_nodes[*var_node_index];
-                let r = var_node.get_matrix_value(&(check_node_index).clone());
-                var_messages.push((*var_node_index, (var_node.get_matrix_value(&(check_node_index)))));
+                if let Some(r) = var_node.get_matrix_value(&(check_node_index).clone()) {
+                    var_messages.push((*var_node_index, r));
+                };
             }
             //Order satisfied in this??
             let check_messages = check_node.node_function.node_function(var_messages)?;
@@ -231,9 +234,13 @@ where
             let variable_nodes_num = self.num_var_nodes;
             for var_node_index in check_node_connections {
                 if let  Some(var_node) = self.var_nodes.get_mut(*var_node_index) {
-                    let r = check_node.get_matrix_value(var_node_index);
-                    let q = var_node.get_matrix_value(&(check_node_index-&variable_nodes_num));
-                    var_node.update_log_prob(q,r);
+                    if let Some(r) = check_node.get_matrix_value(var_node_index) {
+                        if let Some(q) = var_node.get_matrix_value(&(check_node_index-&variable_nodes_num)) {
+                            let mut log_p = q.get_log();
+                            let mut log_r = r.get_log();
+                            var_node.node_variable = Some(log_p.add(&log_r));
+                        };
+                    };
                 }
             }
         }
@@ -246,16 +253,18 @@ where
             let node_connections = &node.connections;
                 //Doesnt matter if there is mut here
             for node_index in node_connections {
-                let initial_pdf = node.get_prior();
-                node.inbox.push((*node_index, initial_pdf));
+                if let Some(initial_pdf) = node.get_prior() {
+                    node.inbox.push((*node_index, initial_pdf));
+                };
             }
         }
         for(i, node) in self.check_nodes.iter_mut().enumerate() {
             let node_connections = &node.connections;
             //Doesnt matter if there is mut here
             for node_index in node_connections {
-                let zero_pdf = node.get_zero_pdf();
-                node.inbox.push((*node_index, zero_pdf));
+                if let Some(zero_pdf) = node.node_variable.clone() {
+                    node.inbox.push((*node_index, zero_pdf));
+                };
             }
         }
     }
@@ -333,12 +342,14 @@ where
         name: String,
         node_function: Box<dyn NodeFunction<T, MsgT, CtrlMsgT, CtrlMsgAT> + Send + Sync>,
         is_var: bool,
+        prior: Option<MsgT>,
     ) -> NodeIndex {
         if is_var {
             self.var_nodes.push(Node::<T, MsgT, CtrlMsgT, CtrlMsgAT>::new(
                 name,
                 node_function,
                 is_var,
+                prior,
             ));
             self.num_var_nodes+=1;
             self.var_nodes.len()-1
@@ -348,6 +359,7 @@ where
                 name,
                 node_function,
                 is_var,
+                prior,
             ));
             self.check_nodes.len()-1
         }
