@@ -16,7 +16,7 @@ where
     T: Debug,
 {
     check_nodes: Vec<Node<T, MsgT, CtrlMsgT, CtrlMsgAT>>,
-    var_nodes: Vec<Node<T, MsgT, CtrlMsgT, CtrlMsgAT>>,
+    pub var_nodes: Vec<Node<T, MsgT, CtrlMsgT, CtrlMsgAT>>,
     step: usize,
     normalize: bool,
     check_validity: bool,
