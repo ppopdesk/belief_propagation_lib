@@ -195,8 +195,10 @@ where
                             let mut r_log: MsgT = r.get_log();
                             r_log.normalize();
                             let mut q_log = log_prob_curr.subtract(r_log);
+                            println!("Before exponent Distn : {:?}", q_log);
                             let mut q = q_log.exponent();
                             q.normalize();
+                            println!("After exponent Distn : {:?}", q);
                             var_node.update_push(check_node_index, q);
                         }
                         else {
