@@ -193,7 +193,6 @@ where
                     if let Some(log_prob_curr) = var_node.node_variable.clone() {
                         if r.is_valid() && !(r.clone()).is_zero() {
                             let mut r_log: MsgT = r.get_log();
-                            r_log.normalize();
                             let mut q_log = log_prob_curr.subtract(r_log);
                             let mut q = q_log.exponent();
                             q.normalize();
