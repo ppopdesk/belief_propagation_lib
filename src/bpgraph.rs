@@ -202,8 +202,10 @@ where
                             var_node.update_push(check_node_index, q);
                         }
                         else {
+                            println!("Before exponent Distn : {:?}", log_prob_curr);
                             let mut q = log_prob_curr.exponent();
                             q.normalize();
+                            println!("After exponent Distn : {:?}", q);
                             var_node.update_push(check_node_index, q);
                         }
                     };
